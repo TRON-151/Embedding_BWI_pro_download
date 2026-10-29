@@ -1,4 +1,4 @@
 data/*
 !data/bwi2022_cluster_buffer.csv
-outputs/
+output/
 dev/

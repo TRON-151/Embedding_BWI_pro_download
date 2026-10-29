@@ -1,10 +1,17 @@
 ---
 title: "BWI x Embed Project"
-subtitle: "Embedding download"
+subtitle: "Embedding download pipeline"
 author: OZ
 ---
 # 0. libraries
-```{r}
+```{r packages}
+needed  <- c("here", "sf", "terra", "dplyr", "readr", "FNN", "knitr")
+missing <- needed[!needed %in% rownames(installed.packages())]
+if (length(missing) > 0){
+    message("Installing ", length(missing), " missing packages: ", paste(missing, collapse = ", "))
+
+    install.packages(missing)
+}
 library(here)
 library(sf)
 library(terra)
@@ -13,38 +20,109 @@ library(readr)
 library(FNN)
 ```
 
-# 1. important values
+# 1. important values and setup
 
-```{r}
+Change the values accordingly
+
+```{r setup}
+# function file
+source("Scripts/download.r")
+
 # boxes = one file per cluster for Thünen
 # tiles = 10 x 10 km tiles 
-mode <- "boxes" 
+run_mode <- "boxes" 
 years <- c(2021, 2022, 2023)
 embeddings <- c("alphaEarth", "tessera")
 testing <- TRUE
 
 # this buffer is for the Germany AOI, later we will put this to 100000 = 100km 
-buffer <- 0 
+DE_buffer <- 100000
 
 target_crs <- "EPSG:25832"
-pixel_resol <- 10 # meters
+pixel_size <- 10 # meters
 tile_size <- 10000  # 10 km x 10 km
 box_extra_margin <- 20 # meters
 
 # input files 
-csv_file <- here::
+dir_list <- list()
+csv_file <- here::here("data", "bwi2022_cluster_buffer.csv")
+
+# this vector link is from a github "nvkelso"
+vector_url <- "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson" 
+
+##### Tessera embeddings setup #####
+geotessera_cli <- Sys.which("geotessera")
+if (!nzchar(geotessera_cli)) {
+  message("the path is empty.")
+} else {
+  message("Create a venv with geotessera")
+  geotessera_cli <- path.expand("~/venvs/geotessera/bin/geotessera")
+}
+tessera_ver <- "v1.1"
+####################################
+
+
+# AlphaEarth embeddings from source.coop
+aef_access <- "https"
+aef_https <- "https://data.source.coop/tge-labs/aef/v1/annual"
+aef_s3 <- "/vsis3/us-west-2.opendata.source.coop/tge-labs/aef/v1/annual"
+aef_index_file <- "aef_index.gpkg"
+
+
+# out directories
+dir_list$out_dir <- here::here("output")
+dir_list$cache <- here::here("data", "cache")
+
+dir_list$grid_dir <- file.path(dir_list$out_dir, "grid")
+dir_list$boxes_dir <- file.path(dir_list$out_dir, "boxes")
+dir_list$tiles_dir <- file.path(dir_list$out_dir, "tiles")
+
+
+for (dir in dir_list){
+    if(!dir.exists(dir)){
+        dir.create(dir, recursive = TRUE)
+        message("created missing dir: ", dir)
+    }else{message("Found '", dir, "' path")}
+}
 ```
 
-```{r}
-
+```{r GDAL settings}
+# GDAL settings, so terra can read files from the internet without a login
+Sys.setenv(GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR")
+Sys.setenv(GDAL_HTTP_MAX_RETRY = "5", GDAL_HTTP_RETRY_DELAY = "3")
+Sys.setenv(AWS_NO_SIGN_REQUEST = "YES", AWS_REGION = "us-west-2")
+Sys.setenv(AWS_S3_ENDPOINT = "s3.us-west-2.amazonaws.com", AWS_VIRTUAL_HOSTING = "FALSE")
+terraOptions(progress = 0)
 ```
-```{r}
 
+# 2. Area of Interest: Germany + buffer zone
+
+```{r AOI}
+world <- st_read(vector_url, quiet = TRUE)
+DE <- world %>% filter(ADMIN == "Germany") %>% st_transform(target_crs)
+DE_buf <- st_buffer(DE, DE_buffer)
+
+# only the countries which touches the buffer
+sf_use_s2(FALSE)
+neigh <- world[lengths(st_intersects(world, st_transform(DE_buf, 4326))) > 0, ]
+sf_use_s2(TRUE)
+
+land <- st_union(st_make_valid(st_transform(neigh, target_crs)))
+aoi  <- st_intersection(st_geometry(DE_buf), land)
+if (any(st_geometry_type(aoi) == "GEOMETRYCOLLECTION")) {
+  aoi <- st_collection_extract(aoi, "POLYGON")
+}
+
+# we only need the land part that touches Germany
+aoi_parts <- st_cast(aoi, "POLYGON")
+DE_buf <- st_union(aoi_parts[lengths(st_intersects(aoi_parts, germany)) > 0])
+plot(DE)
+
+
+cat(
+  "Area of DE without buffer: ", sum(as.numeric(st_area(DE$geometry))) / 1e6, " km²\n",
+  "Area of DE with buffer (", DE_buffer, "): ", sum(as.numeric(st_area(aoi))) / 1e6, " km²\n",
+  sep = ""
+)
 ```
-```{r}
 
-```
-
-```{r}
-
-```
