@@ -1,0 +1,50 @@
+---
+title: "BWI x Embed Project"
+subtitle: "Embedding download"
+author: OZ
+---
+# 0. libraries
+```{r}
+library(here)
+library(sf)
+library(terra)
+library(dplyr)
+library(readr)
+library(FNN)
+```
+
+# 1. important values
+
+```{r}
+# boxes = one file per cluster for Thünen
+# tiles = 10 x 10 km tiles 
+mode <- "boxes" 
+years <- c(2021, 2022, 2023)
+embeddings <- c("alphaEarth", "tessera")
+testing <- TRUE
+
+# this buffer is for the Germany AOI, later we will put this to 100000 = 100km 
+buffer <- 0 
+
+target_crs <- "EPSG:25832"
+pixel_resol <- 10 # meters
+tile_size <- 10000  # 10 km x 10 km
+box_extra_margin <- 20 # meters
+
+# input files 
+csv_file <- here::
+```
+
+```{r}
+
+```
+```{r}
+
+```
+```{r}
+
+```
+
+```{r}
+
+```
