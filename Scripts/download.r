@@ -1,86 +1,4 @@
-##source("scripts/00_rlibraries.R")
-#library(here)
-#
-## important paths
-#dir_list <- list(
-#    data = here::here("data") 
-##    out_dir = here::here("output"),
-##    out_regions = here::here("output", "regions"),
-##    model_inputs = here::here("output", "model_inputs")
-#)
-#
-#
-#
-#for (dir in dir_list){
-#    if(!dir.exists(dir)){
-#        dir.create(dir, recursive = TRUE)
-#        message("created missing dir: ", dir)
-#    }else{message("Found '", dir, "' path")}
-#}
-#
-#aoi_utm_0 <- st_transform(st_read(file.path(dir_list$data, "/bbox/aoi_bbox_0.geojson")), 25832)
-#
-## regions <- names(params)[unlist(params)]
-#
-#regions <- c("region_1", "region_2")
-#download_ALS(regions)
-#
-#
-#
-##if (params$build_data_from_base || length(list.files(dir_list$data)) == 0 ) {
-##  source("scripts/02_download_data.R")
-##}
-#
-#aoi_0 <- st_transform(st_read(file.path(root, "data/bbox/aoi_bbox_0.geojson")), 25832)
-#
-#
-#
-###############################################################################################
-###############################################################################################
-###############################################################################################
-#
-#library(sf)
-#library(mapview)
-#
-## ---- Germany boundary ----
-## Natural Earth 1:10m country polygons (sf reads the URL directly)
-#vector_url <- "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson"
-#world_sf <- st_read(vector_url)
-#
-#germany_sf    <- world_sf[world_sf$ADMIN == "Germany", ]
-#germany_utm32 <- st_transform(germany_sf, crs = 25832)
-#
-## ---- AOI: Germany + 100 km buffer, clipped to land ----
-#germany_buf <- st_buffer(germany_utm32, 100000)  # EPSG:25832 is in metres
-#
-## only the countries touching the buffer (transforming the whole world to UTM gives broken geometries)
-#sf_use_s2(FALSE)
-#neigh <- world_sf[lengths(st_intersects(world_sf, st_transform(germany_buf, 4326))) > 0, ]
-#sf_use_s2(TRUE)
-#
-#land <- st_union(st_make_valid(st_transform(neigh, 25832)))
-#aoi  <- st_intersection(st_geometry(germany_buf), land)
-#
-## keep only land connected to Germany (drops parts across water, e.g. Danish islands, Sweden)
-#aoi_parts <- st_cast(aoi, "POLYGON")
-#aoi       <- st_union(aoi_parts[lengths(st_intersects(aoi_parts, germany_utm32)) > 0])
-#
-#mapview(aoi, col.regions = "red", alpha.regions = 0.3, layer.name = "AOI") +
-#    mapview(germany_utm32, alpha.regions = 0, layer.name = "Germany")
-#
-# ---- Embeddings (geotessera) ----
-# TODO: --region-file expects a file path, so write the AOI to disk first
-# gt_cli <- file.path(dirname(py_exe()), "geotessera")
-# args   <- c("download", "--region-file", shQuote(aoi_file), "--year", 2022, "--output", dir_list$embd_dir)
-# system2(gt_cli, args)
-
-
-#######################################################################################
-#######################################################################################
-#######################################################################################
-
-
-# testing
+# testing function for saving raster
 save_raster <- function(x, file, int8 = FALSE) {
   part_file <- paste0(file, ".part")
   if (int8) {
@@ -91,4 +9,60 @@ save_raster <- function(x, file, int8 = FALSE) {
                 gdal = "COMPRESS=DEFLATE", overwrite = TRUE)
   }
   file.rename(part_file, file)
+}
+
+##################################################################################
+
+# function for counting the number of box will be cut on different level of fixed grid.
+count_cut_boxes <- function(size, step = 100) {
+  shifts <- seq(0, size - step, by = step)
+
+  # best shift for the vertical edges
+  cut_x <- c()
+  for (s in shifts) {
+    col_left  <- floor((boxes$xmin - s) / size)
+    col_right <- floor((boxes$xmax - 1 - s) / size)     # -1 m: a box that only touches an edge is not cut
+    cut_x <- c(cut_x, sum(col_left != col_right))
+  }
+  best_x <- shifts[which.min(cut_x)]
+
+  # best shift for the horizontal edges
+  cut_y <- c()
+  for (s in shifts) {
+    row_bottom <- floor((boxes$ymin - s) / size)
+    row_top    <- floor((boxes$ymax - 1 - s) / size)
+    cut_y <- c(cut_y, sum(row_bottom != row_top))
+  }
+  best_y <- shifts[which.min(cut_y)]
+
+  # boxes cut by the best grid of this size
+  cut <- floor((boxes$xmin - best_x) / size) != floor((boxes$xmax - 1 - best_x) / size) |
+         floor((boxes$ymin - best_y) / size) != floor((boxes$ymax - 1 - best_y) / size)
+  sum(cut)
+}
+
+
+##################################################################################
+
+# function to load tessera embeddings 
+get_tessera <- function(template, year) {
+  cell_zone <- cell_zones(template)
+
+  own_zone <- list() # piece where the cell lies in its zone
+  any_zone <- list() # piece everywhere it has data
+  for (z in unique(cell_zone)) {
+    # our area, 20 m bigger, in the CRS of this zone, so the package reads the grid of this zone.
+    # on a zone border the package warns that the area spans two zones, that is expected
+    area_z <- st_transform(st_buffer(st_as_sfc(st_bbox(template)), 20), paste0("EPSG:326", z))
+    r <- tessera_region(gt, area_z, year)
+    piece <- project(r, template, method = "near") # project on our grid
+    any_zone[[length(any_zone) + 1]] <- piece
+    piece[which(cell_zone != z)] <- NA
+    own_zone[[length(own_zone) + 1]] <- piece
+  }
+
+  # every cell from its own zone, and where that zone has no data, from the other zone
+  out <- cover(merge(sprc(own_zone)), merge(sprc(any_zone)))
+  names(out) <- sprintf("tes_%03d", 0:(nlyr(out) - 1))
+  out
 }

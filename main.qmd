@@ -4,25 +4,28 @@ subtitle: "Embedding download pipeline"
 author: OZ
 ---
 # 0. libraries
-```{r packages}
-needed  <- c("here", "sf", "terra", "dplyr", "readr", "FNN", "knitr")
-missing <- needed[!needed %in% rownames(installed.packages())]
-if (length(missing) > 0){
-    message("Installing ", length(missing), " missing packages: ", paste(missing, collapse = ", "))
+```{r renv_packages}
+install.packages("renv")
+renv::restore()                
+```
 
-    install.packages(missing)
-}
+```{r packages}
+if (getRversion() < "4.4.0") stop("R 4.4 or newer is needed")
+if (packageVersion("zarr") != "0.5.1") stop("zarr is not 0.5.1, run renv::restore() first")
+
 library(here)
 library(sf)
 library(terra)
 library(dplyr)
 library(readr)
 library(FNN)
+library(geotessera)
+
 ```
 
 # 1. important values and setup
 
-Change the values accordingly
+Change the the things accordingly
 
 ```{r setup}
 # function file
@@ -50,14 +53,7 @@ csv_file <- here::here("data", "bwi2022_cluster_buffer.csv")
 # this vector link is from a github "nvkelso"
 vector_url <- "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson" 
 
-##### Tessera embeddings setup #####
-geotessera_cli <- Sys.which("geotessera")
-if (!nzchar(geotessera_cli)) {
-  message("the path is empty.")
-} else {
-  message("Create a venv with geotessera")
-  geotessera_cli <- path.expand("~/venvs/geotessera/bin/geotessera")
-}
+##### Tessera embeddings version #####
 tessera_ver <- "v1.1"
 ####################################
 
@@ -71,7 +67,7 @@ aef_index_file <- "aef_index.gpkg"
 
 # out directories
 dir_list$out_dir <- here::here("output")
-dir_list$cache <- here::here("data", "cache")
+dir_list$cache_dir <- here::here("data", "cache")
 
 dir_list$grid_dir <- file.path(dir_list$out_dir, "grid")
 dir_list$boxes_dir <- file.path(dir_list$out_dir, "boxes")
@@ -173,10 +169,10 @@ st_write(boxes_sf, file.path(dir_list$grid_dir, "cluster_boxes.gpkg"), delete_ds
 print(nrow(boxes))                
 ```
 
-# 4. The 10 x 10 km tiles
+# 4. The 10 x 10 km tiles for US
 
 Each tile start as a multiple of 10km. Therefore every tile edge is multiple of 10000m, which is also a multiple of 10m, so every tile is exactly 10 m x 10m of our grid.
-```{r}
+```{r tiles}
 area <- st_bbox(DE_buf)
 x0 <- floor(min(area["xmin"], boxes$xmin) / tile_size) * tile_size
 y0 <- floor(min(area["ymin"], boxes$ymin) / tile_size) * tile_size
@@ -212,5 +208,31 @@ print(nrow(tiles))
 
 # just to view all the tiles and the boxes
 # mapview::mapview(tiles) + mapview::mapview(boxes_sf)
+```
+
+# 5. Lets check why fixed grid for the cluster boxes
+
+```{r grid_test}
+# lets check how many boxes will be cut on different level of fixed grid size
+sizes_km <- c(2, 5, 10, 20, 50, 100, 200, 400, 600, 800)
+grid_test <- data.frame(size_km = sizes_km, boxes_cut = NA)
+for (i in 1:nrow(grid_test)) {
+  grid_test$boxes_cut[i] <- count_cut_boxes(grid_test$size_km[i] * 1000)
+  print(grid_test[i, ])
+}
+
+plot(grid_test$size_km, grid_test$boxes_cut + 1, log = "xy", type = "b", pch = 19,
+     xlab = "tile size (km)", ylab = "cluster boxes cut",
+     main = "how many boxes does it cut")
+```
+
+here we see that with each size of grid keeps cutting the custer boxes till we have the largest size of grid which is almost the length of whole Germany from north to south (800 km). Therefore we are taking individual boxes for each cluster box. 
+
+# 6. Tessera Embeddings using geotessera R package
+```{r tessera_store_check}
+# lets save the download piece on disk
+options(geotessera.cache_dir = file.path(dir_list$cache_dir, "tessera"))
+gt <- tessera_open(tessera_store_url(tessera_ver, NULL))
+gt$years
 ```
 
