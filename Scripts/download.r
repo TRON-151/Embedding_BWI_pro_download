@@ -41,6 +41,14 @@ count_cut_boxes <- function(size, step = 100) {
   sum(cut)
 }
 
+##################################################################################
+
+# the UTM zone of every cell of a template, from the longitude of the cell centre.
+# used on zone borders, so that every cell takes its value from its own zone
+cell_zones <- function(template) {
+  lon <- project(xyFromCell(template, 1:ncell(template)), crs(template), "EPSG:4326")[, 1]
+  floor((lon + 180) / 6) + 1
+}
 
 ##################################################################################
 
@@ -51,8 +59,6 @@ get_tessera <- function(template, year) {
   own_zone <- list() # piece where the cell lies in its zone
   any_zone <- list() # piece everywhere it has data
   for (z in unique(cell_zone)) {
-    # our area, 20 m bigger, in the CRS of this zone, so the package reads the grid of this zone.
-    # on a zone border the package warns that the area spans two zones, that is expected
     area_z <- st_transform(st_buffer(st_as_sfc(st_bbox(template)), 20), paste0("EPSG:326", z))
     r <- tessera_region(gt, area_z, year)
     piece <- project(r, template, method = "near") # project on our grid
@@ -60,9 +66,43 @@ get_tessera <- function(template, year) {
     piece[which(cell_zone != z)] <- NA
     own_zone[[length(own_zone) + 1]] <- piece
   }
-
-  # every cell from its own zone, and where that zone has no data, from the other zone
   out <- cover(merge(sprc(own_zone)), merge(sprc(any_zone)))
   names(out) <- sprintf("tes_%03d", 0:(nlyr(out) - 1))
+  out
+}
+
+
+###############################################################################
+
+# function to load Alpha Earth Embeddings
+get_aef <- function(template, year) {
+  area_ll <- st_transform(st_as_sfc(st_bbox(template)), 4326)
+  files   <- aef_index[aef_index$year == year, ]
+  files   <- files[st_intersects(files, area_ll, sparse = FALSE)[, 1], ]
+  if (nrow(files) == 0) {
+    message("  no AEF file for this area")
+    return(NULL)
+  }
+
+  cell_zone <- cell_zones(template)
+  own_zone <- list() 
+  any_zone <- list()    
+  for (u in files$url) {
+    src <- rast(u)   
+    z <- as.numeric(crs(src, describe = TRUE)$code) %% 100 
+    e <- project(ext(template), from = crs(template), to = crs(src))  
+    e <- terra::intersect(extend(e, 100), ext(src))         
+    if (is.null(e)) next
+    piece <- crop(src, e, snap = "out")   # downloads only this part
+    piece <- project(piece, template, method = "near")                   
+    piece[piece == -128] <- NA                                         
+    any_zone[[length(any_zone) + 1]] <- piece
+    piece[which(cell_zone != z)] <- NA
+    own_zone[[length(own_zone) + 1]] <- piece
+  }
+  if (length(any_zone) == 0) return(NULL)
+
+  out <- cover(merge(sprc(own_zone)), merge(sprc(any_zone)))
+  names(out) <- sprintf("aef_%02d", 0:(nlyr(out) - 1))
   out
 }
