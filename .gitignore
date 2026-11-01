@@ -1,4 +1,5 @@
 data/*
-!data/bwi2022_cluster_buffer.csv
 output/
 dev/
+notebooks/*_files/
+notebooks/*.html

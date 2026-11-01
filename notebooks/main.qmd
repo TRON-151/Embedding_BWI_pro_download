@@ -1,0 +1,210 @@
+---
+title: "BWI x Embed Project"
+subtitle: "Looking at the data"
+author: OZ
+---
+
+This notebook does not download anything. Run `main.r` first, then this file only reads what
+`main.r` saved in `output/` and shows it.
+
+# 0. libraries
+
+```{r packages}
+# the notebook is one folder down, so the renv library is loaded from the project folder
+if (file.exists("../renv/activate.R")) renv::load("..")
+
+source(here::here("Scripts", "setup.r"))
+source(here::here("Scripts", "areas.r"))
+source(here::here("Scripts", "embeddings.r"))
+source(here::here("Scripts", "download.r"))
+library(mapview)
+```
+
+# 1. values
+
+Same values as in `main.r`.
+
+```{r setup}
+run_mode <- "boxes"
+years <- c(2021, 2022, 2023)
+embeddings <- c("alphaEarth", "tessera")
+target_crs <- "EPSG:25832"
+pixel_size <- 10
+tile_size <- 10000
+
+# FALSE = leave out the piles of overlapping boxes (I found some groups major ones near: Hachenburg, Kelheim, Eberswalde)
+# TRUE = keep all boxes
+overlap_boxes <- FALSE
+
+tessera_ver <- "v1.1"
+aef_https <- "https://data.source.coop/tge-labs/aef/v1/annual"
+aef_index_file <- "aef_index.gpkg"
+
+grid_dir <- here::here("output", "grid")
+cache_dir <- here::here("data", "cache")
+if (run_mode == "boxes") {
+  out_root <- here::here("output", "boxes")
+} else {
+  out_root <- here::here("output", "tiles")
+}
+```
+
+# 2. Area of Interest: Germany + buffer zone
+
+```{r AOI}
+DE <- st_read(file.path(grid_dir, "germany.gpkg"), quiet = TRUE)
+DE_buf <- st_read(file.path(grid_dir, "aoi.gpkg"), quiet = TRUE)
+
+buffer_plot(DE, DE_buf)
+
+cat(
+  "Area of DE without buffer: ", sum(as.numeric(st_area(DE))) / 1e6, " km²\n",
+  "Area of DE with buffer: ", sum(as.numeric(st_area(DE_buf))) / 1e6, " km²\n",
+  sep = ""
+)
+```
+
+# 3. BOXES for BWI
+
+One box per cluster region. All rows of the same cluster name belong to the same region, so we
+make one box around all of them.
+
+```{r boxes}
+boxes <- st_read(file.path(grid_dir, "cluster_boxes.gpkg"), quiet = TRUE)
+dropped_boxes <- st_read(file.path(grid_dir, "dropped_boxes.gpkg"), quiet = TRUE)
+
+all_boxes <- rbind(boxes, dropped_boxes)
+if (overlap_boxes) {
+  boxes <- all_boxes
+} else {
+  boxes <- all_boxes[all_boxes$group_size < 3, ]
+}
+
+print(nrow(boxes))
+print(nrow(dropped_boxes))
+
+# 1 = no overlap, 2 = two boxes overlap each other
+table(boxes$group_size)
+```
+
+### Overlapping boxes
+
+Near Hachenburg, Kelheim and Eberswalde many boxes lie on top of each other, so `main.r` leaves out every
+box that is in a group of 3 or more overlapping boxes.
+
+```{r dropped}
+# where the dropped groups are
+centres <- st_coordinates(st_transform(st_centroid(st_geometry(dropped_boxes)), 4326))
+dropped_boxes$lon <- centres[, 1]
+dropped_boxes$lat <- centres[, 2]
+
+dropped_boxes %>%
+  st_drop_geometry() %>%
+  group_by(overlap_group) %>%
+  summarise(n_boxes = n(), lon = round(mean(lon), 2), lat = round(mean(lat), 2),
+            names_7_digits = sum(cluster_name >= 1000000))
+
+# the pairs we keep, and their longitude
+pairs <- boxes[boxes$group_size == 2, ]
+summary(st_coordinates(st_transform(st_centroid(st_geometry(pairs)), 4326))[, 1])
+```
+
+```{r overlap_map}
+# red = left out, blue = pairs we keep
+mapview(dropped_boxes, col.regions = "red") + mapview(pairs, col.regions = "blue")
+```
+
+# 4. The 10 x 10 km tiles for us
+
+Each tile starts at a multiple of 10 km, so every tile edge is also on our 10 m grid.
+
+```{r tiles}
+tiles <- st_read(file.path(grid_dir, "tiles_10km.gpkg"), quiet = TRUE)
+print(nrow(tiles))
+
+# just to view all the tiles and the boxes
+mapview(tiles) + mapview(boxes)
+```
+
+# 5. Why no fixed grid for the cluster boxes
+
+```{r grid_test}
+# how many boxes are cut by a fixed grid of different sizes
+sizes_km <- c(1, 2, 3, 4, 5, 7, 8, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 150, 200, 300, 400, 500, 600, 700, 800)
+grid_test <- data.frame(size_km = sizes_km, boxes_cut = NA)
+for (i in 1:nrow(grid_test)) {
+  grid_test$boxes_cut[i] <- count_cut_boxes(boxes, grid_test$size_km[i] * 1000)
+  print(grid_test[i, ])
+}
+
+plot(grid_test$size_km, grid_test$boxes_cut + 1, log = "xy", type = "b", pch = 19,
+     xlab = "tile size (km)", ylab = "cluster boxes cut",
+     main = "how many boxes does it cut")
+```
+
+Every grid size keeps cutting the cluster boxes, until the grid is almost as big as Germany from
+north to south (800 km). So we take one box for each cluster.
+
+# 6. Tessera Embeddings using geotessera R package
+
+```{r tessera_store_check}
+options(geotessera.cache_dir = file.path(cache_dir, "tessera"))
+gt <- tessera_open(tessera_store_url(tessera_ver, NULL))
+gt$years
+```
+
+# 7. Alpha Earth
+
+```{r aef_index}
+aef_index <- get_aef_index(aef_https, aef_index_file, DE_buf, tile_size, target_crs, cache_dir)
+print(table(aef_index$year))   # number of files per year in AOI
+```
+
+# 8. AEF speed
+
+In the test run one AEF box took about 40 s and a 10 km tile 3 to 4 min. TESSERA took 2 to 7 s
+for the same box.
+
+If the AEF files say `INTERLEAVE=BAND`, each of the 64 bands is stored on its own. GDAL then
+reads the box band after band, and every band waits for the server in the US (about 0.5 s).
+64 x 0.5 s is about the 40 s we see. More GDAL settings did not change this in a test with a
+slow local server, so the fix is to run several parts of `main.r` at the same time.
+
+```{r aef_speed}
+# how the AEF files are stored
+one_file <- aef_index$url[aef_index$year == 2022][1]
+info <- describe(one_file)
+print(info[grepl("INTERLEAVE|Band 1 Block", info)])
+
+# time for one box, the same way as in the download
+b <- boxes[1, ]
+template <- rast(ext(b$xmin, b$xmax, b$ymin, b$ymax), res = pixel_size, crs = target_crs)
+start_time <- Sys.time()
+x <- get_aef(template, 2022, aef_index)
+print(as.numeric(difftime(Sys.time(), start_time, units = "secs")))
+```
+
+# 9. Checking files
+
+```{r checker}
+check_downloads(out_root, years, embeddings, pixel_size)
+```
+
+```{r times}
+# seconds per download, from the time files of all parts
+time_files <- list.files(out_root, pattern = "^download_times_part_.*csv$", full.names = TRUE)
+times <- read_csv(time_files, show_col_types = FALSE)
+times %>%
+  group_by(embedding, year) %>%
+  summarise(n = n(), mean_seconds = round(mean(seconds), 1), max_seconds = max(seconds))
+
+# rough time for all areas in days, with 1 run and with 8 parts at the same time
+if (run_mode == "boxes") {
+  n_areas <- nrow(boxes)
+} else {
+  n_areas <- nrow(tiles)
+}
+sec_per_area <- sum(tapply(times$seconds, times$embedding, mean)) * length(years)
+days <- sec_per_area * n_areas / 86400
+print(round(c(one_run = days, eight_parts = days / 8), 1))
+```
