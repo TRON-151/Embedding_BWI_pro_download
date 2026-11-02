@@ -7,7 +7,7 @@ if (packageVersion("zarr") != "0.5.1") stop("zarr is not 0.5.1, run renv::restor
 Sys.setenv(GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR")
 Sys.setenv(CPL_VSIL_CURL_ALLOWED_EXTENSIONS = ".tif,.tiff,.gpkg")
 Sys.setenv(GDAL_HTTP_MAX_RETRY = "5", GDAL_HTTP_RETRY_DELAY = "3")
-# don't set GDAL_NUM_THREADS, terra got stuck with it in my test
+Sys.setenv(CPL_VSIL_CURL_CACHE_SIZE = "536870912") # increase the cache memory 
 
 library(here)
 library(sf)

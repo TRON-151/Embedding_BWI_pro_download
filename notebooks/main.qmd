@@ -208,3 +208,27 @@ sec_per_area <- sum(tapply(times$seconds, times$embedding, mean)) * length(years
 days <- sec_per_area * n_areas / 86400
 print(round(c(one_run = days, eight_parts = days / 8), 1))
 ```
+
+# 10. Timing
+
+```{r timing_plot}
+#| fig-width: 11
+#| fig-height: 4.2
+# timing from the test runs on 1 Nov
+parts <- c("1", "8", "16", "20", "20 cache")
+files_per_hour <- c(49, 295, 1592, 2121, 8814)
+aef_sec <- c(69.7, 42.9, 26.8, 29.4, 5.5)
+
+# days for all files (27736 boxes x 3 years)
+days <- 27736 * 3 / files_per_hour / 24
+round(days, 1)
+
+par(mfrow = c(1, 2))
+barplot(files_per_hour, names.arg = parts, xlab = "parts", main = "AEF files per hour", cex.names = 0.8)
+barplot(aef_sec, names.arg = parts, xlab = "parts", main = "AEF seconds per file", cex.names = 0.8)
+dev.copy(png, here::here("Scripts", "timing_plot.png"), width = 11, height = 4.2, units = "in", res = 150)
+dev.off()
+
+
+
+```

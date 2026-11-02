@@ -95,4 +95,10 @@ find output -name "*.part" -delete      # optional, removes the half files from 
 
 To go on after a stop, run the same loop again. Files that already exist are skipped, so you can also change the number of parts.
 
-- 8 parts is just a start. If the seconds in `download_times_part_*.csv` stay the same, more parts are fine. If they go up a lot, the internet or the server is the limit.
+
+---
+
+## Time graph of download speed from testing
+
+![Download speed of AEF and TESSERA](Scripts/timing_plot.png)
+
