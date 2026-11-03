@@ -2,6 +2,7 @@
 
 if (getRversion() < "4.4.0") stop("R 4.4 or newer is needed")
 if (packageVersion("zarr") != "0.5.1") stop("zarr is not 0.5.1, run renv::restore() first")
+if (!requireNamespace("qs2", quietly = TRUE)) stop("qs2 is missing, run renv::restore()")  # zarr needs it for OlmoEarth (zstd)
 
 # GDAL settings, so terra can read the AEF files from source.coop
 Sys.setenv(GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR")

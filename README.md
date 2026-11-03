@@ -88,7 +88,7 @@ n=16; for i in $(seq 1 $n); do nohup Rscript main.r $i $n > output/logs/part_$i.
 
 ```bash
 tail -f output/logs/part_1.txt  # follow part 1, Ctrl+C only stops the watching
-ls output/boxes/2021/alphaEarth | wc -l # boxes done for 2021
+ls output/boxes/2022/alphaEarth | wc -l # boxes done for 2022 for Alpha Earth embeddings or you can change as well as per folder name
 pkill -f "main.r"  # stop all parts
 find output -name "*.part" -delete      # optional, removes the half files from the stop
 ```
@@ -100,5 +100,12 @@ To go on after a stop, run the same loop again. Files that already exist are ski
 
 ## Time graph of download speed from testing
 
-![Download speed of AEF and TESSERA](Scripts/timing_plot.png)
+![Download speed of AEF](Scripts/timing_plot.png)
+
+
+---
+
+## Fixed grid cuts how many cluster boxes graph
+
+![Boxes cut for different levels of fixed grid size](Scripts/box_cutting_graph.png)
 

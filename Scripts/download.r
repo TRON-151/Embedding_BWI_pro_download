@@ -34,7 +34,7 @@ pick_test_areas <- function(areas, run_mode) {
 # year by year, so one year is complete before the next one starts.
 # files that already exist are skipped, so a stopped run can just be started again.
 # the time of each download goes into time_file
-run_download <- function(areas, years, embeddings, out_root, aef_index, gt, pixel_size, crs, time_file) {
+run_download <- function(areas, years, embeddings, out_root, aef_index, gt, olmo, pixel_size, crs, time_file) {
   for (y in years) {
     for (p in embeddings) {
       dir.create(file.path(out_root, y, p), recursive = TRUE, showWarnings = FALSE)
@@ -53,6 +53,8 @@ run_download <- function(areas, years, embeddings, out_root, aef_index, gt, pixe
         start_time <- Sys.time()
         if (p == "alphaEarth") {
           emb <- try(get_aef(template, year, aef_index))
+        } else if (p == "olmo") {
+          emb <- try(get_olmo(template, year, olmo))
         } else {
           emb <- try(get_tessera(template, year, gt))
         }
@@ -60,7 +62,7 @@ run_download <- function(areas, years, embeddings, out_root, aef_index, gt, pixe
           message("  ", a$name, " ", p, " ", year, " failed, it is tried again in the next run")
           next
         }
-        save_raster(emb, out_file, int8 = (p == "alphaEarth"))
+        save_raster(emb, out_file, int8 = (p %in% c("alphaEarth", "olmo")))
         rm(emb)
 
         # Sys.time() - start_time picks seconds or minutes by itself, so we always ask for seconds

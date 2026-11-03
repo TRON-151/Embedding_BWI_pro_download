@@ -1,4 +1,4 @@
-# functions to read the AlphaEarth (AEF) and TESSERA embeddings for one area
+# functions to read the AlphaEarth (AEF), TESSERA and OlmoEarth embeddings for one area
 
 # writes a .part file first and renames it at the end, so a half written file is never taken as done
 save_raster <- function(x, file, int8 = FALSE) {
@@ -113,5 +113,64 @@ get_tessera <- function(template, year, gt) {
   }
   out <- cover(merge(sprc(own_zone)), merge(sprc(any_zone)))
   names(out) <- sprintf("tes_%03d", 0:(nlyr(out) - 1))
+  out
+}
+
+##################################################################################
+
+# OlmoEarth for one area in the CRS of zone z, values stay int8 (NA = no data).
+# the store has the same layout as TESSERA (utmNN groups, time/band/y/x, sharded int8),
+# so tessera_open() can open it. but tessera_region() needs a "scales" array that
+# OlmoEarth does not have, so we use the reader inside geotessera (the ::: functions, their version is fixed by renv)
+
+olmo_region <- function(olmo, area_z, year, z) {
+  zone <- geotessera:::zone_open(olmo, z)
+  if (is.null(zone)) return(NULL)
+  ti <- match(year, zone$years) - 1   # 0 based position of the year
+  if (is.na(ti)) stop("no OlmoEarth data for ", year)
+  reader <- geotessera:::zone_reader(olmo, zone, "embeddings")
+
+  # pixel window, 0 based, start is included and end is not
+  b <- st_bbox(area_z)
+  col0 <- max(0, floor((b[["xmin"]] - zone$ox) / zone$px))
+  col1 <- min(reader$shape[4], ceiling((b[["xmax"]] - zone$ox) / zone$px))
+  row0 <- max(0, floor((zone$oy - b[["ymax"]]) / zone$px))
+  row1 <- min(reader$shape[3], ceiling((zone$oy - b[["ymin"]]) / zone$px))
+
+  # downloads only the 256 x 256 chunks that are needed, comes back as [x, y, band, time]
+  v <- geotessera:::read_block(reader, c(ti, 0, row0, col0), c(ti + 1, reader$shape[2], row1, col1))
+  dim(v) <- dim(v)[1:3]
+  v[v == -128] <- NA
+
+  # terra wants [y, x, band]
+  rast(aperm(v, c(2, 1, 3)), crs = zone$crs,
+       extent = ext(zone$ox + col0 * zone$px, zone$ox + col1 * zone$px,
+                    zone$oy - row1 * zone$px, zone$oy - row0 * zone$px))
+}
+
+##################################################################################
+
+# OlmoEarth for one template, olmo is the store from tessera_open(olmo_url).
+# same steps as get_tessera()
+get_olmo <- function(template, year, olmo) {
+  cell_zone <- cell_zones(template)
+
+  own_zone <- list()
+  any_zone <- list()
+  for (z in unique(cell_zone)) {
+    # area in the CRS of zone z, so we get the pixels of zone z
+    area_z <- st_transform(st_buffer(st_as_sfc(st_bbox(template)), 20), paste0("EPSG:326", z))
+    r <- olmo_region(olmo, area_z, year, z)
+    if (is.null(r)) next
+    piece <- project(r, template, method = "near")
+    any_zone[[length(any_zone) + 1]] <- piece
+    piece[which(cell_zone != z)] <- NA
+    own_zone[[length(own_zone) + 1]] <- piece
+  }
+  if (length(any_zone) == 0) return(NULL)
+
+  # own zone first, the other zone only where the own zone has no data
+  out <- cover(merge(sprc(own_zone)), merge(sprc(any_zone)))
+  names(out) <- sprintf("olm_%03d", 0:(nlyr(out) - 1))
   out
 }

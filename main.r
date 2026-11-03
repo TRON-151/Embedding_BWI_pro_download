@@ -21,9 +21,9 @@ source(here::here("Scripts", "download.r"))
 # boxes = one file per cluster for Thünen
 # tiles = 10 x 10 km tiles for us
 run_mode <- "boxes"
-years <- c(2021, 2022, 2023)
-embeddings <- c("alphaEarth", "tessera")
-testing <- TRUE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
+years <- c(2022)
+embeddings <- c("olmo") # type only these strings "alphaEarth", "tessera", "olmo"
+testing <- FALSE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
 
 DE_buffer <- 100000 # buffer around Germany in meters (100 km)
 target_crs <- "EPSG:25832"
@@ -47,6 +47,9 @@ tessera_ver <- "v1.1"
 # AlphaEarth embeddings from source.coop
 aef_https <- "https://data.source.coop/tge-labs/aef/v1/annual"
 aef_index_file <- "aef_index.gpkg"
+
+# OlmoEarth v1.3 embeddings from source.coop (zarr with zstd, needs the qs2 package)
+olmo_url <- "https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr"
 
 # out directories
 dir_list <- list()
@@ -119,6 +122,13 @@ aef_index <- get_aef_index(aef_https, aef_index_file, DE_buf, tile_size, target_
 options(geotessera.cache_dir = file.path(dir_list$cache_dir, "tessera"))
 gt <- tessera_open(tessera_store_url(tessera_ver, NULL))
 
+# OlmoEarth has the same zarr layout as tessera, so geotessera opens it.
+# cache only in memory: each piece is used for one box, a disk cache would only fill the disk
+olmo <- NULL
+if ("olmo" %in% embeddings) {
+  olmo <- tessera_open(olmo_url, cache_dir = NULL)
+}
+
 
 # 6. download
 if (run_mode == "boxes") {
@@ -142,7 +152,7 @@ message("run_mode: ", run_mode, ", part ", part, " of ", n_parts, ", areas to do
 time_file <- file.path(out_root, paste0("download_times_part_", part, ".csv"))
 
 start_time <- Sys.time()
-run_download(areas, years, embeddings, out_root, aef_index, gt, pixel_size, target_crs, time_file)
+run_download(areas, years, embeddings, out_root, aef_index, gt, olmo, pixel_size, target_crs, time_file)
 total_minutes <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
 message("total time: ", round(total_minutes, 1), " minutes")
 

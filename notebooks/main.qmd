@@ -26,7 +26,7 @@ Same values as in `main.r`.
 
 ```{r setup}
 run_mode <- "boxes"
-years <- c(2021, 2022, 2023)
+years <- c(2022)
 embeddings <- c("alphaEarth", "tessera")
 target_crs <- "EPSG:25832"
 pixel_size <- 10
@@ -140,6 +140,9 @@ for (i in 1:nrow(grid_test)) {
 plot(grid_test$size_km, grid_test$boxes_cut + 1, log = "xy", type = "b", pch = 19,
      xlab = "tile size (km)", ylab = "cluster boxes cut",
      main = "how many boxes does it cut")
+
+dev.copy(png, here::here("Scripts", "box_cutting_graph.png"), width = 11, height = 4.2, units = "in", res = 150)
+dev.off()
 ```
 
 Every grid size keeps cutting the cluster boxes, until the grid is almost as big as Germany from
