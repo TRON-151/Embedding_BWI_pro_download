@@ -20,16 +20,17 @@ source(here::here("Scripts", "download.r"))
 
 # boxes = one file per cluster for Thünen
 # tiles = 10 x 10 km tiles for us
-run_mode <- "boxes"
+run_mode <- "tiles"
 years <- c(2022)
-embeddings <- c("olmo") # type only these strings "alphaEarth", "tessera", "olmo"
-testing <- FALSE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
+embeddings <- c("alphaEarth","tessera","olmo") # type only these strings "alphaEarth", "tessera", "olmo"
+testing <- TRUE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
 
 DE_buffer <- 100000 # buffer around Germany in meters (100 km)
 target_crs <- "EPSG:25832"
 pixel_size <- 10 # meters
 tile_size <- 10000  # 10 km x 10 km
 box_extra_margin <- 20  # meters
+bbox_AOI <- TRUE # True = Germany bbox + buffer zone and FALSE = buffer around the border 
 
 # FALSE = leave out the piles of overlapping boxes (I found some groups major ones near: Hachenburg, Kelheim, Eberswalde)
 # TRUE = keep all boxes
@@ -52,12 +53,21 @@ aef_index_file <- "aef_index.gpkg"
 olmo_url <- "https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr"
 
 # out directories
+#"/cloud/wwu1/s_embednfi/share/data"
+cloud_base <- "/cloud/wwu1/s_embednfi/share/data"
+
 dir_list <- list()
 dir_list$out_dir <- here::here("output")
+if (dir.exists(cloud_base)) {
+  download_dir <- file.path(cloud_base, "embeddings")
+} else {
+  warning("Cloud directory not found. Falling back to local output directory")
+  download_dir <- file.path(dir_list$out_dir)
+}
 dir_list$cache_dir <- here::here("data", "cache")
 dir_list$grid_dir <- file.path(dir_list$out_dir, "grid")
-dir_list$boxes_dir <- file.path(dir_list$out_dir, "boxes")
-dir_list$tiles_dir <- file.path(dir_list$out_dir, "tiles")
+dir_list$boxes_dir <- file.path(download_dir, "boxes")
+dir_list$tiles_dir <- file.path(download_dir, "tiles")
 
 ################################################################################
 
@@ -82,7 +92,7 @@ if (length(args) == 2) {
 # 2. AOI: Germany + buffer zone
 world <- st_read(vector_url, quiet = TRUE)
 DE <- world %>% filter(ADMIN == "Germany") %>% st_transform(target_crs)
-DE_buf <- make_aoi(world, DE, DE_buffer, target_crs)
+DE_buf <- make_aoi(world, DE, DE_buffer, target_crs, bbox_AOI)
 
 # 3. boxes for BWI, one box per cluster name
 cluster_plots <- read_csv(csv_file, show_col_types = FALSE)

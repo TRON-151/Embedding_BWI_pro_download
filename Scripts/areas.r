@@ -1,8 +1,15 @@
 # functions for the AOI, the cluster boxes and the 10 x 10 km tiles
 ################################################################
 # Germany + buffer, only the land part that touches Germany
-make_aoi <- function(world, DE, buffer, crs) {
-  DE_buf <- st_buffer(DE, buffer)
+make_aoi <- function(world, DE, buffer, crs, bbox_aoi = FALSE) {
+  if(bbox_aoi){
+    b <- st_bbox(DE)
+    b[c("xmin", "ymin")] <- b[c("xmin", "ymin")] - buffer
+    b[c("xmax", "ymax")] <- b[c("xmax", "ymax")] + buffer
+    DE_buf <- st_as_sfc(b)
+  }else{
+    DE_buf <- st_buffer(DE, buffer)
+  }
 
   # only the countries which touch the buffer
   sf_use_s2(FALSE)
@@ -15,8 +22,7 @@ make_aoi <- function(world, DE, buffer, crs) {
     aoi <- st_collection_extract(aoi, "POLYGON")
   }
 
-  aoi_parts <- st_cast(aoi, "POLYGON")
-  st_union(aoi_parts[lengths(st_intersects(aoi_parts, DE)) > 0])
+  st_union(st_collection_extract(aoi, "POLYGON"))
 }
 
 ##################################################################################
