@@ -9,6 +9,7 @@
 # do one run with testing <- TRUE first, it saves the AEF index that all parts use
 #
 # first time on a new computer: renv::restore()
+message(format(Sys.time()), " start")
 
 source(here::here("Scripts", "setup.r"))
 source(here::here("Scripts", "areas.r"))
@@ -23,7 +24,7 @@ source(here::here("Scripts", "download.r"))
 run_mode <- "tiles"
 years <- c(2022)
 embeddings <- c("alphaEarth","tessera","olmo") # type only these strings "alphaEarth", "tessera", "olmo"
-testing <- TRUE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
+testing <- FALSE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
 
 DE_buffer <- 100000 # buffer around Germany in meters (100 km)
 target_crs <- "EPSG:25832"
@@ -53,17 +54,11 @@ aef_index_file <- "aef_index.gpkg"
 olmo_url <- "https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr"
 
 # out directories
-#"/cloud/wwu1/s_embednfi/share/data"
-cloud_base <- "/cloud/wwu1/s_embednfi/share/data"
+
+download_dir <- Sys.getenv("EMB_OUT", here::here("output"))
 
 dir_list <- list()
 dir_list$out_dir <- here::here("output")
-if (dir.exists(cloud_base)) {
-  download_dir <- file.path(cloud_base, "embeddings")
-} else {
-  warning("Cloud directory not found. Falling back to local output directory")
-  download_dir <- file.path(dir_list$out_dir)
-}
 dir_list$cache_dir <- here::here("data", "cache")
 dir_list$grid_dir <- file.path(dir_list$out_dir, "grid")
 dir_list$boxes_dir <- file.path(download_dir, "boxes")
@@ -83,11 +78,13 @@ for (dir in dir_list) {
 args <- commandArgs(trailingOnly = TRUE)
 part <- 1
 n_parts <- 1
-if (length(args) == 2) {
+max_new <- Inf  
+if (length(args) >= 2) {
   part <- as.numeric(args[1])
   n_parts <- as.numeric(args[2])
 }
-
+if (length(args) >= 3) max_new <- as.numeric(args[3])
+if (length(args) >= 4) embeddings <- strsplit(args[4], ",")[[1]]   # "tessera" or "tessera,olmo"
 
 # 2. AOI: Germany + buffer zone
 world <- st_read(vector_url, quiet = TRUE)
@@ -162,7 +159,8 @@ message("run_mode: ", run_mode, ", part ", part, " of ", n_parts, ", areas to do
 time_file <- file.path(out_root, paste0("download_times_part_", part, ".csv"))
 
 start_time <- Sys.time()
-run_download(areas, years, embeddings, out_root, aef_index, gt, olmo, pixel_size, target_crs, time_file)
+result <- run_download(areas, years, embeddings, out_root, aef_index, gt, olmo, pixel_size, target_crs, time_file, max_new)
+if (identical(result, "limit")) quit(save = "no", status = 10)
 total_minutes <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
 message("total time: ", round(total_minutes, 1), " minutes")
 

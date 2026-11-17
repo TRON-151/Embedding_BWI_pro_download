@@ -34,7 +34,8 @@ pick_test_areas <- function(areas, run_mode) {
 # year by year, so one year is complete before the next one starts.
 # files that already exist are skipped, so a stopped run can just be started again.
 # the time of each download goes into time_file
-run_download <- function(areas, years, embeddings, out_root, aef_index, gt, olmo, pixel_size, crs, time_file) {
+run_download <- function(areas, years, embeddings, out_root, aef_index, gt, olmo, pixel_size, crs, time_file, max_new = Inf) {
+  n_new <- 0
   for (y in years) {
     for (p in embeddings) {
       dir.create(file.path(out_root, y, p), recursive = TRUE, showWarnings = FALSE)
@@ -64,6 +65,7 @@ run_download <- function(areas, years, embeddings, out_root, aef_index, gt, olmo
         }
         save_raster(emb, out_file, int8 = (p %in% c("alphaEarth", "olmo")))
         rm(emb)
+        terra::tmpFiles(remove = TRUE)
 
         # Sys.time() - start_time picks seconds or minutes by itself, so we always ask for seconds
         seconds <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
@@ -77,8 +79,10 @@ run_download <- function(areas, years, embeddings, out_root, aef_index, gt, olmo
         } else {
           write.table(one_row, time_file, sep = ",", row.names = FALSE)
         }
+        n_new <- n_new + 1
+        if (n_new >= max_new) return("limit")
       }
-      gc()
+      message(mem_line())
     }
   }
 }
@@ -150,4 +154,13 @@ write_readme <- function(out_root, years, box_extra_margin, n_dropped, tessera_v
            "128 bands tes_000 to tes_127, float32, NA = no data.")
   )
   writeLines(readme, file.path(out_root, "README.txt"))
+}
+
+###########################################################
+# memory of this R process: whole process, R's own objects, temp files (all GB)
+mem_line <- function() {
+  r_obj <- sum(gc()[, 2]) / 1024
+  rss   <- as.numeric(system(paste("ps -o rss= -p", Sys.getpid()), intern = TRUE)) / 1024^2
+  tmp   <- sum(file.size(list.files(tempdir(), recursive = TRUE, full.names = TRUE))) / 1024^3
+  sprintf("mem: process %.1f | R objects %.1f | temp files %.1f", rss, r_obj, tmp)
 }
