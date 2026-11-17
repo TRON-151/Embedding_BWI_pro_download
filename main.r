@@ -125,9 +125,9 @@ if (part == 1) {
 # 5. embedding sources
 aef_index <- get_aef_index(aef_https, aef_index_file, DE_buf, tile_size, target_crs, dir_list$cache_dir)
 
-# tessera saves the downloaded pieces on disk
-options(geotessera.cache_dir = file.path(dir_list$cache_dir, "tessera"))
-gt <- tessera_open(tessera_store_url(tessera_ver, NULL))
+#tessera
+gt <- tessera_open(tessera_store_url(tessera_ver, NULL), cache_dir = NULL)   # no shared disk cache
+options(geotessera.concurrency = as.numeric(Sys.getenv("GT_CONC", "32")))   # parallel requests per part
 
 # OlmoEarth has the same zarr layout as tessera, so geotessera opens it.
 # cache only in memory: each piece is used for one box, a disk cache would only fill the disk
