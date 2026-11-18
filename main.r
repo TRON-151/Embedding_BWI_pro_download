@@ -20,10 +20,10 @@ source(here::here("Scripts", "download.r"))
 
 # boxes = one file per cluster for Thünen
 # tiles = 10 x 10 km tiles for us
-run_mode <- "tiles"
+run_mode <- "boxes"
 years <- c(2022)
 embeddings <- c("alphaEarth","tessera","olmo") # type only these strings "alphaEarth", "tessera", "olmo"
-testing <- TRUE # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
+testing <- F # if "boxes" then it will download only 10 files per embeddings per year and if run mode is "tiles" then 2 files per embeddings per year 
 
 DE_buffer <- 100000 # buffer around Germany in meters (100 km)
 target_crs <- "EPSG:25832"
@@ -103,8 +103,6 @@ DE_bbox = st_intersection(
 # 3. boxes for BWI, one box per cluster name
 cluster_plots <- read_csv(csv_file, show_col_types = FALSE)
 cluster_plots <- add_plot_ids(cluster_plots)
-boxes <- make_boxes(cluster_plots, box_extra_margin, pixel_size, target_crs)
-
 boxes <- make_boxes(cluster_plots, box_extra_margin, pixel_size, target_crs)
 
 # finding the overlapping boxes 
@@ -187,3 +185,37 @@ if (run_mode == "boxes" && part == 1) {
   file.copy(file.path(dir_list$grid_dir, "cluster_boxes.gpkg"), out_root, overwrite = TRUE)
   file.copy(file.path(dir_list$grid_dir, "dropped_boxes.gpkg"), out_root, overwrite = TRUE)
 }
+
+# 8. SatPCA boxes
+
+spca_list = list.files("~/Projects/NFI_Embeddings/SatPCA_2022_10m/tiles_50km", full.names = T)
+out.dir = file.path(dir_list$boxes_dir, "SatPCA")
+if (!dir.exists(out.dir)) dir.create(out.dir)
+
+# Use a cluster to lapply the crop function for each cluster box geometry
+n.cores = 12
+cl = parallel::makeCluster(n.cores)
+parallel::clusterExport(cl, varlist = c("areas", "out.dir", "target_crs", "spca_list"),
+                        envir = environment())
+
+crop_satpca_boxes = function(i){
+    a = areas[i,]
+    out.name = file.path(out.dir, paste0(a$name, ".tif"))
+    if (! file.exists(out.name)){
+      vrt = terra::vrt(spca_list)   # each worker builds its own VRT from the tile paths
+      names(vrt) = paste0("pc_", 1:8)
+      template <- terra::rast(terra::ext(a$xmin, a$xmax, a$ymin, a$ymax), res = 10, crs = target_crs)
+      terra::crop(vrt, template, filename = out.name)
+    }
+}
+
+parallel::clusterExport(cl, "crop_satpca_boxes", envir = environment())
+
+# run in parallel
+idx = 1:nrow(areas)
+res = parallel::parLapplyLB(cl, idx, crop_satpca_boxes)
+parallel::stopCluster(cl)
+
+# checks
+length(list.files(out.dir)) == nrow(areas)
+plot(rast(file.path(out.dir, "cluster_0000123.tif")))
