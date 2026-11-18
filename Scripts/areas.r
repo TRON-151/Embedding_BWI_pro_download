@@ -100,7 +100,7 @@ find_overlap_groups <- function(boxes) {
 ##################################################################################
 
 # tiles start at a multiple of 10 km, so every tile edge is also on our 10 m grid
-make_tiles <- function(DE_buf, boxes, tile_size, crs) {
+make_tiles <- function(DE_buf, boxes, tile_size, crs, expand = F) {
   area <- st_bbox(DE_buf)
   x0 <- floor(min(area["xmin"], boxes$xmin) / tile_size) * tile_size
   y0 <- floor(min(area["ymin"], boxes$ymin) / tile_size) * tile_size
@@ -122,7 +122,10 @@ make_tiles <- function(DE_buf, boxes, tile_size, crs) {
   # only the tiles which touch the AOI or any box
   tiles$in_aoi <- st_intersects(tiles, DE_buf, sparse = FALSE)[, 1]
   tiles$n_boxes <- lengths(st_intersects(tiles, boxes))
-  tiles <- tiles[tiles$in_aoi | tiles$n_boxes > 0, ]
+
+  if (!expand){
+    tiles <- tiles[tiles$in_aoi | tiles$n_boxes > 0, ]
+  }
 
   # UTM zone of the tile centre
   centres <- st_transform(st_centroid(st_geometry(tiles)), 4326)

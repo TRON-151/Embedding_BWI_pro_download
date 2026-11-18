@@ -94,9 +94,17 @@ world <- st_read(vector_url, quiet = TRUE)
 DE <- world %>% filter(ADMIN == "Germany") %>% st_transform(target_crs)
 DE_buf <- make_aoi(world, DE, DE_buffer, target_crs, bbox_AOI)
 
+# alternative AOI
+DE_bbox = st_intersection(
+  st_bbox(DE_buf) |> st_as_sfc(), 
+  st_transform(world, target_crs) |> st_buffer(1000)
+) |> st_union() 
+
 # 3. boxes for BWI, one box per cluster name
 cluster_plots <- read_csv(csv_file, show_col_types = FALSE)
 cluster_plots <- add_plot_ids(cluster_plots)
+boxes <- make_boxes(cluster_plots, box_extra_margin, pixel_size, target_crs)
+
 boxes <- make_boxes(cluster_plots, box_extra_margin, pixel_size, target_crs)
 
 # finding the overlapping boxes 
@@ -113,6 +121,10 @@ message(nrow(boxes), " boxes, ", nrow(dropped_boxes), " overlapping boxes remove
 # 4. the 10 x 10 km tiles for us
 tiles <- make_tiles(DE_buf, boxes, tile_size, target_crs)
 
+# export for GEE tiling grid
+# write_sf(tiles, "data/tiles_10km.shp")
+# tiles50 <- make_tiles(DE_bbox, boxes, 50000, target_crs)
+# write_sf(tiles50, "data/tiles_50km.shp")
 
 # saving, only by part 1 so that parallel runs don't write the same file
 if (part == 1) {
